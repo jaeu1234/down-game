@@ -1,0 +1,1054 @@
+<title>ABYSS DRIFT — 심연 낙하</title>
+<style>
+  :root{
+    --bg-void:#05070c;
+    --ink-mist-soft:rgba(20,27,44,0.62);
+    --glow-cyan:#5ef2e0;
+    --glow-violet:#9d7bff;
+    --ember:#ff6b5b;
+    --text-primary:#e8edf7;
+    --text-muted:#7c8aa8;
+    --font-display: 'Segoe UI', system-ui, -apple-system, 'Malgun Gothic', sans-serif;
+    --font-mono: ui-monospace, 'Cascadia Code', 'SFMono-Regular', Consolas, 'Liberation Mono', monospace;
+    --font-body: system-ui, -apple-system, 'Malgun Gothic', sans-serif;
+  }
+  *{box-sizing:border-box;}
+  html,body{margin:0;padding:0;height:100%;background:var(--bg-void);overflow:hidden;}
+  body{
+    width:100%;height:100vh;
+    font-family:var(--font-body);
+    color:var(--text-primary);
+    -webkit-font-smoothing:antialiased;
+  }
+  #app{position:relative;width:100%;height:100vh;overflow:hidden;}
+  canvas{display:block;width:100%;height:100%;touch-action:none;cursor:grab;}
+  canvas:active{cursor:grabbing;}
+
+  .hud{
+    position:absolute; top:0; left:0; right:0;
+    display:flex; justify-content:space-between; align-items:flex-start;
+    padding:18px 22px; pointer-events:none; z-index:5;
+  }
+  .hud-panel{
+    background:var(--ink-mist-soft);
+    border:1px solid rgba(94,242,224,0.18);
+    border-radius:10px;
+    padding:clamp(9px,0.9vw,12px) clamp(16px,1.4vw,20px);
+    backdrop-filter:blur(10px);
+    -webkit-backdrop-filter:blur(10px);
+  }
+  .hud-label{
+    font-family:var(--font-mono); font-size:clamp(10px,0.85vw,11px); letter-spacing:.16em;
+    color:var(--text-muted); text-transform:uppercase; margin:0 0 2px;
+  }
+  .hud-value{
+    font-family:var(--font-mono); font-size:clamp(22px,1.9vw,27px); font-weight:600;
+    color:var(--text-primary); letter-spacing:.02em; font-variant-numeric:tabular-nums;
+  }
+  .hud-value.accent{color:var(--glow-cyan); text-shadow:0 0 12px rgba(94,242,224,0.5);}
+  .hud-value.violet{color:var(--glow-violet); text-shadow:0 0 12px rgba(157,123,255,0.5);}
+  .hud-right{display:flex; gap:10px;}
+
+  #activeReadout{
+    display:none; position:absolute; left:22px; bottom:18px; z-index:5;
+    font-family:var(--font-mono); font-size:12px; letter-spacing:.06em;
+    color:var(--text-muted); background:var(--ink-mist-soft);
+    border:1px solid rgba(94,242,224,0.18); border-radius:8px;
+    padding:6px 12px; pointer-events:none;
+  }
+
+  #muteBtn{
+    position:absolute; bottom:18px; right:18px; z-index:6;
+    width:38px; height:38px; border-radius:50%;
+    background:var(--ink-mist-soft); border:1px solid rgba(94,242,224,0.18);
+    color:var(--text-muted); font-family:var(--font-mono); font-size:15px;
+    display:flex; align-items:center; justify-content:center; cursor:pointer;
+    backdrop-filter:blur(10px);
+  }
+  #muteBtn:hover{color:var(--glow-cyan); border-color:rgba(94,242,224,0.4);}
+
+  .overlay{
+    position:absolute; inset:0; z-index:10;
+    display:flex; align-items:center; justify-content:center;
+    background:radial-gradient(ellipse at 50% 40%, rgba(20,27,44,0.55), rgba(5,7,12,0.92));
+  }
+  .overlay.hidden{display:none;}
+  .panel{
+    /* used by the game-over screen only now — the title screen has its own
+       layout below since desktop splits into two columns, not just a bigger card */
+    width:min(92vw, clamp(370px, 30vw, 560px));
+    background:radial-gradient(circle at 50% -10%, rgba(60,58,110,0.55) 0%, var(--ink-mist-soft) 55%, rgba(9,11,20,0.7) 100%);
+    border:1px solid rgba(94,242,224,0.22);
+    border-radius:20px;
+    padding:clamp(32px, 3.4vw, 46px) clamp(26px, 3vw, 40px) clamp(30px, 3vw, 38px);
+    text-align:center;
+    position:relative; overflow:hidden;
+    backdrop-filter:blur(16px);
+    -webkit-backdrop-filter:blur(16px);
+    box-shadow:0 30px 80px rgba(0,0,0,0.5), 0 0 60px rgba(94,242,224,0.05) inset;
+  }
+  .panel > *{ position:relative; }
+
+  .glow-blob{
+    position:absolute; border-radius:50%; filter:blur(50px); pointer-events:none;
+  }
+  .glow-blob.a{ top:clamp(-140px,-9vw,-70px); left:clamp(-120px,-7vw,-50px); width:clamp(200px,20vw,380px); height:clamp(200px,20vw,380px); background:rgba(94,242,224,0.14); }
+  .glow-blob.b{ bottom:clamp(-120px,-8vw,-40px); right:clamp(-140px,-9vw,-60px); width:clamp(220px,22vw,420px); height:clamp(220px,22vw,420px); background:rgba(157,123,255,0.14); }
+
+  /* ---- title screen: single stacked card on mobile, two-column split on
+     desktop. Grid areas (not DOM order) control the reflow, since mobile
+     wants [...controls, legend, cta] but desktop wants legend as a whole
+     separate side column instead of sitting between controls and the button ---- */
+  .title-layout{
+    position:relative;
+    width:min(92vw, clamp(370px, 30vw, 560px));
+    display:grid;
+    grid-template-areas:"badge" "title" "desc" "controls" "legend" "cta";
+    row-gap:22px;
+    background:radial-gradient(circle at 50% -10%, rgba(60,58,110,0.55) 0%, var(--ink-mist-soft) 55%, rgba(9,11,20,0.7) 100%);
+    border:1px solid rgba(94,242,224,0.22);
+    border-radius:20px;
+    padding:clamp(32px, 3.4vw, 46px) clamp(26px, 3vw, 40px) clamp(30px, 3vw, 38px);
+    text-align:center;
+    overflow:hidden;
+    backdrop-filter:blur(16px);
+    -webkit-backdrop-filter:blur(16px);
+    box-shadow:0 30px 80px rgba(0,0,0,0.5), 0 0 60px rgba(94,242,224,0.05) inset;
+  }
+  .legend-title{ display:none; }
+  .cta-group{ display:flex; flex-direction:column; align-items:center; gap:16px; }
+
+  .eyebrow-badge{
+    /* grid stretches items to full column width by default; this one is a
+       pill that must stay content-sized instead of stretching its background */
+    justify-self:center;
+    display:inline-flex; align-items:center; gap:8px;
+    padding:6px 14px; border-radius:999px;
+    background:rgba(20,27,44,0.6); border:1px solid rgba(255,255,255,0.08);
+  }
+  .eyebrow-badge .pulse-dot{
+    width:6px; height:6px; border-radius:50%; background:var(--glow-cyan);
+    animation:eyebrowGlow 2s ease-in-out infinite;
+  }
+  @keyframes eyebrowGlow{ 0%,100%{opacity:.55;} 50%{opacity:1;} }
+  .eyebrow{
+    font-family:var(--font-mono); font-size:11px; letter-spacing:.2em;
+    color:var(--glow-cyan); text-transform:uppercase; opacity:.9;
+  }
+  .title-main{
+    font-family:var(--font-display); font-weight:800; font-size:clamp(40px, 4vw, 54px);
+    letter-spacing:-0.01em; margin:0; line-height:1.05;
+    background:linear-gradient(135deg, var(--glow-cyan), var(--glow-violet));
+    -webkit-background-clip:text; background-clip:text; color:transparent;
+    text-shadow:0 0 46px rgba(94,242,224,0.25);
+  }
+  .title-sub{
+    font-family:var(--font-body); font-size:clamp(15px, 1.3vw, 18px); color:var(--text-muted);
+    margin:6px 0 0; letter-spacing:.04em;
+  }
+  .desc{
+    font-size:clamp(13.5px, 1.15vw, 15.5px); line-height:1.7; color:var(--text-primary);
+    opacity:.82; margin:0;
+  }
+  .key-row{
+    display:flex; flex-wrap:wrap; justify-content:center; align-items:center;
+    row-gap:8px; column-gap:clamp(10px, 1vw, 13px);
+  }
+  .key{
+    display:flex; align-items:center; justify-content:center;
+    width:clamp(34px, 3vw, 40px); height:clamp(34px, 3vw, 40px); border-radius:9px;
+    background:rgba(255,255,255,0.05); border:1px solid rgba(255,255,255,0.1);
+    color:var(--text-primary); font-family:var(--font-mono); font-size:clamp(13px,1.1vw,15px); font-weight:600;
+  }
+  .key-or{ font-size:clamp(12px,1vw,13.5px); color:var(--text-muted); padding:0 2px; }
+  .controls-caption{
+    flex-basis:100%; /* forces its own line on mobile; desktop clears this to flow inline */
+    font-size:clamp(12px,1vw,13.5px); color:var(--text-muted);
+  }
+  .legend{
+    display:flex; flex-direction:column; gap:13px; align-items:stretch;
+    margin:0; padding:clamp(16px,1.6vw,20px) clamp(18px,1.8vw,22px);
+    background:rgba(255,255,255,0.03); border:1px solid rgba(255,255,255,0.06);
+    border-radius:16px; width:100%;
+  }
+  .legend-item{
+    display:flex; align-items:center; gap:12px; text-align:left;
+    font-size:clamp(13.5px,1.15vw,15px); color:var(--text-primary); opacity:.9; letter-spacing:.01em;
+  }
+  .legend-item b{opacity:1; font-weight:600; color:var(--text-primary);}
+  .dot{
+    width:clamp(16px,1.4vw,18px); height:clamp(16px,1.4vw,18px); border-radius:50%; flex:none;
+    box-shadow:0 0 10px currentColor;
+  }
+  .dot.cyan{background:var(--glow-cyan); color:var(--glow-cyan);}
+  .dot.ember{background:var(--ember); color:var(--ember);}
+  .dot.gap{background:transparent; border:2px solid var(--text-muted); box-shadow:none;}
+  .cta{
+    width:100%; display:flex; align-items:center; justify-content:center; gap:8px;
+    font-family:var(--font-display); font-weight:700; font-size:clamp(17px,1.5vw,19px);
+    letter-spacing:-0.01em; color:var(--bg-void);
+    background:linear-gradient(135deg, var(--glow-cyan), var(--glow-violet));
+    border:none; border-radius:16px; padding:clamp(17px,1.6vw,20px); cursor:pointer;
+    box-shadow:0 10px 28px rgba(94,242,224,0.3), inset 0 1px 0 rgba(255,255,255,0.25);
+    transition:transform .15s ease, box-shadow .15s ease;
+  }
+  .cta:hover{transform:translateY(-1px); box-shadow:0 14px 32px rgba(94,242,224,0.42), inset 0 1px 0 rgba(255,255,255,0.25);}
+  .cta:active{transform:translateY(1px) scale(0.99);}
+  .cta:focus-visible{outline:2px solid var(--glow-violet); outline-offset:3px;}
+  .best-badge{
+    display:inline-flex; align-items:center; gap:8px;
+    padding:8px 16px; border-radius:999px;
+    background:rgba(20,27,44,0.6); border:1px solid rgba(255,255,255,0.06);
+  }
+  .best-badge span{ font-size:12.5px; color:var(--text-muted); }
+  .best-badge b{ font-family:var(--font-mono); font-size:14px; color:var(--glow-cyan); font-weight:700; }
+
+  .stat-row{
+    display:flex; justify-content:center; gap:28px; margin:20px 0 26px;
+  }
+  .stat{display:flex; flex-direction:column; align-items:center; gap:4px;}
+  .stat-label{font-family:var(--font-mono); font-size:10px; letter-spacing:.16em; color:var(--text-muted); text-transform:uppercase;}
+  .stat-num{font-family:var(--font-mono); font-size:26px; font-weight:600; color:var(--text-primary); font-variant-numeric:tabular-nums;}
+  .stat-num.hi{color:var(--glow-violet); text-shadow:0 0 14px rgba(157,123,255,.45);}
+  .divider{height:1px; background:linear-gradient(90deg, transparent, rgba(94,242,224,0.28), transparent); margin:18px 0;}
+  .back-link{
+    display:inline-block; margin-top:16px; font-family:var(--font-mono); font-size:11px;
+    color:var(--text-muted); letter-spacing:.06em; cursor:pointer; text-decoration:underline;
+    text-underline-offset:3px; background:none; border:none; padding:0;
+  }
+  .back-link:hover{color:var(--glow-cyan);}
+
+  /* ---- desktop: title screen splits into a left text column and a
+     separate bordered legend card on the right, matching the wide layout ---- */
+  @media (min-width: 880px){
+    .title-layout{
+      width:min(94vw, 1120px);
+      grid-template-columns:1fr 380px;
+      grid-template-areas:
+        "badge    legend"
+        "title    legend"
+        "desc     legend"
+        "controls legend"
+        "cta      legend";
+      column-gap:80px; row-gap:20px;
+      background:none; border:none; padding:0; box-shadow:none;
+      backdrop-filter:none; -webkit-backdrop-filter:none;
+      text-align:left; overflow:visible;
+      align-items:start;
+    }
+    .title-block,
+    .title-layout .desc,
+    .title-layout .key-row,
+    .title-layout .cta-group{ text-align:left; }
+    .eyebrow-badge{ justify-self:start; }
+    .title-main{ font-size:clamp(56px, 5vw, 72px); }
+    .title-sub{ font-size:20px; }
+    .desc{ font-size:16.5px; max-width:460px; }
+    .key-row{ justify-content:flex-start; }
+    .controls-caption{ flex-basis:auto; width:auto; margin-left:4px; }
+    .cta-group{ align-items:flex-start; }
+    .cta{ width:280px; }
+    .legend-col{
+      align-self:center;
+      background:radial-gradient(circle at 50% -10%, rgba(60,58,110,0.55) 0%, var(--ink-mist-soft) 55%, rgba(9,11,20,0.7) 100%);
+      border:1px solid rgba(94,242,224,0.22);
+      border-radius:20px;
+      padding:26px;
+      backdrop-filter:blur(16px); -webkit-backdrop-filter:blur(16px);
+      box-shadow:0 30px 80px rgba(0,0,0,0.5), 0 0 60px rgba(94,242,224,0.05) inset;
+    }
+    .legend-title{
+      display:block;
+      font-family:var(--font-display); font-size:13px; letter-spacing:.08em;
+      color:var(--text-muted); font-weight:600; margin:0 0 20px; text-transform:uppercase;
+    }
+    .legend{ margin:0; padding:0; background:none; border:none; gap:20px; }
+    .legend-item{ font-size:15px; gap:14px; }
+    .dot{ width:18px; height:18px; }
+  }
+
+  @media (prefers-reduced-motion: reduce){
+    .cta{transition:none;}
+  }
+</style>
+
+<div id="app">
+  <canvas id="game" role="img" aria-label="ABYSS DRIFT 게임 화면 — 회전하는 링을 통과하며 낙하하는 아케이드 게임"></canvas>
+
+  <div class="hud" id="hud" style="display:none;">
+    <div class="hud-panel">
+      <p class="hud-label">Depth</p>
+      <p class="hud-value accent" id="depthVal">0<span style="font-size:12px;opacity:.6;">m</span></p>
+    </div>
+    <div class="hud-right">
+      <div class="hud-panel">
+        <p class="hud-label">Combo</p>
+        <p class="hud-value violet" id="comboVal">×1.0</p>
+      </div>
+      <div class="hud-panel">
+        <p class="hud-label">Score</p>
+        <p class="hud-value" id="scoreVal">0</p>
+      </div>
+    </div>
+  </div>
+
+  <div id="activeReadout"></div>
+
+  <button id="muteBtn" title="음소거">♪</button>
+
+  <div class="overlay" id="titleScreen">
+    <div class="glow-blob a"></div>
+    <div class="glow-blob b"></div>
+
+    <div class="title-layout">
+      <div class="eyebrow-badge" style="grid-area:badge;">
+        <span class="pulse-dot"></span>
+        <span class="eyebrow">회전형 낙하 아케이드</span>
+      </div>
+
+      <div class="title-block" style="grid-area:title;">
+        <h1 class="title-main">ABYSS DRIFT</h1>
+        <p class="title-sub">심연 낙하</p>
+      </div>
+
+      <p class="desc" style="grid-area:desc;">끝없이 아래로 떨어지는 소용돌이 구조물 속으로.<br>회전시켜 빈틈을 찾고, 플랫폼에서 튕기며, 가시는 피하세요.</p>
+
+      <div class="key-row" style="grid-area:controls;">
+        <span class="key">←</span>
+        <span class="key">→</span>
+        <span class="key-or">또는</span>
+        <span class="key">A</span>
+        <span class="key">D</span>
+        <span class="controls-caption">로 회전 · 드래그로도 회전 가능</span>
+      </div>
+
+      <div class="legend-col" style="grid-area:legend;">
+        <p class="legend-title">장애물 안내</p>
+        <div class="legend">
+          <span class="legend-item"><i class="dot gap"></i><span><b>빈 공간</b> — 그대로 통과합니다</span></span>
+          <span class="legend-item"><i class="dot cyan"></i><span><b>시안 벨트</b> — 막혀서 튕겨 나갑니다 (통과 불가)</span></span>
+          <span class="legend-item"><i class="dot ember"></i><span><b>빨간 가시</b> — 닿으면 즉시 게임 오버</span></span>
+        </div>
+      </div>
+
+      <div class="cta-group" style="grid-area:cta;">
+        <button class="cta" id="startBtn">낙하 시작 <span aria-hidden="true">↓</span></button>
+        <div class="best-badge" id="titleBest" style="display:none;">
+          <span>최고 기록</span><b id="titleBestVal">0</b>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="overlay hidden" id="gameOverScreen">
+    <div class="panel">
+      <p class="eyebrow">낙하 종료</p>
+      <h1 class="title-main" style="font-size:30px;">추락했습니다</h1>
+      <div class="divider"></div>
+      <div class="stat-row">
+        <div class="stat">
+          <p class="stat-label">Depth</p>
+          <p class="stat-num" id="finalDepth">0m</p>
+        </div>
+        <div class="stat">
+          <p class="stat-label">Score</p>
+          <p class="stat-num" id="finalScore">0</p>
+        </div>
+        <div class="stat">
+          <p class="stat-label">Best</p>
+          <p class="stat-num hi" id="finalBest">0</p>
+        </div>
+      </div>
+      <button class="cta" id="retryBtn">다시 낙하</button>
+      <br>
+      <button class="back-link" id="titleLink">처음 화면으로</button>
+    </div>
+  </div>
+</div>
+
+<script>
+(function(){
+  "use strict";
+  const canvas = document.getElementById('game');
+  const ctx = canvas.getContext('2d');
+  const reducedMotion = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+  // cached DOM refs + last-written values, so the HUD only touches the DOM
+  // when a displayed value actually changes instead of every single frame
+  const el = {
+    depth: document.getElementById('depthVal'),
+    score: document.getElementById('scoreVal'),
+    combo: document.getElementById('comboVal'),
+    readout: document.getElementById('activeReadout'),
+  };
+  const last = { depth: null, score: null, combo: null, readoutLabel: null };
+
+  let DPR = Math.min(window.devicePixelRatio || 1, 2);
+  let W = 0, H = 0, CX = 0;
+  let BALL_SCREEN_Y = 0;
+  // ring must always fit fully inside the viewport width, or its far side
+  // (and any gap sitting there) gets clipped off-screen and becomes unreachable
+  let RING_RADIUS = 128;
+  let RING_INNER = 102;
+
+  function resize(){
+    W = window.innerWidth; H = window.innerHeight;
+    canvas.width = Math.floor(W * DPR);
+    canvas.height = Math.floor(H * DPR);
+    ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+    CX = W / 2;
+    BALL_SCREEN_Y = H * 0.36;
+    RING_RADIUS = Math.max(64, Math.min(140, W*0.36, H*0.2));
+    RING_INNER = RING_RADIUS - Math.max(16, Math.round(RING_RADIUS*0.2));
+  }
+  window.addEventListener('resize', resize);
+  resize();
+
+  // ---------- constants ----------
+  const RING_SPACING = 300;   // world-units of fall between consecutive rings
+  const RING_SQUASH = 0.34;   // vertical flatten factor for the ring ellipse
+  const BALL_RADIUS = 10;
+  const GRAVITY = 700;        // px/s^2 while falling
+  const BOUNCE_VY = -520;     // upward velocity applied on a platform bounce
+  const MAX_VY = 2200;        // terminal fall speed cap
+  const MAX_STEP_PX = 8;      // physics sub-step size — see update()
+  const ORB_PICKUP_RADIUS = 34; // px, screen-space orb pickup distance
+  // bottom of the ellipse (its NEAR edge, closest to the viewer as a ring
+  // scrolls up toward the ball) rather than the far/top edge — this is the
+  // part of the ring that visually reaches the ball first, so it reads as
+  // "the front" of the ring, not "the back"
+  const REF_ANGLE = Math.PI / 2;
+  const ROT_ACCEL = 11;
+  const ROT_MAX = 3.8;
+  const ROT_DAMPING = 7.5;
+  const DRAG_SENS = 0.006;
+  const SEG_PAD = 0.02;
+
+  function norm(a){ a = a % (Math.PI*2); if(a<0) a += Math.PI*2; return a; }
+  function lerp(a,b,t){ return a+(b-a)*t; }
+  function lerpColor(a,b,t){
+    const ah=parseInt(a.slice(1),16), bh=parseInt(b.slice(1),16);
+    const ar=(ah>>16)&255, ag=(ah>>8)&255, ab=ah&255;
+    const br=(bh>>16)&255, bg=(bh>>8)&255, bb=bh&255;
+    const rr=Math.round(lerp(ar,br,t)), rg=Math.round(lerp(ag,bg,t)), rb=Math.round(lerp(ab,bb,t));
+    return `rgb(${rr},${rg},${rb})`;
+  }
+
+  // ---------- audio ----------
+  let audioCtx = null, muted = false, droneOsc = null, droneGain = null;
+  function ensureAudio(){
+    if(!audioCtx){
+      try{ audioCtx = new (window.AudioContext||window.webkitAudioContext)(); }catch(e){ return; }
+      droneOsc = audioCtx.createOscillator();
+      droneGain = audioCtx.createGain();
+      droneOsc.type = 'sine';
+      droneOsc.frequency.value = 50;
+      droneGain.gain.value = 0.0;
+      droneOsc.connect(droneGain).connect(audioCtx.destination);
+      droneOsc.start();
+    }
+    if(audioCtx.state === 'suspended') audioCtx.resume();
+  }
+  function tone(freq, dur, type, gainVal, glideTo){
+    if(muted || !audioCtx) return;
+    const t0 = audioCtx.currentTime;
+    const osc = audioCtx.createOscillator();
+    const g = audioCtx.createGain();
+    osc.type = type || 'sine';
+    osc.frequency.setValueAtTime(freq, t0);
+    if(glideTo) osc.frequency.exponentialRampToValueAtTime(glideTo, t0+dur);
+    g.gain.setValueAtTime(gainVal, t0);
+    g.gain.exponentialRampToValueAtTime(0.0001, t0+dur);
+    osc.connect(g).connect(audioCtx.destination);
+    osc.start(t0); osc.stop(t0+dur+0.03);
+  }
+  function playBounce(){ tone(210,0.14,'sine',0.16,170); }
+  function playPass(){ tone(480,0.07,'sine',0.05,720); }
+  function playOrb(){ tone(880,0.09,'triangle',0.11); setTimeout(()=>tone(1320,0.11,'triangle',0.1),55); }
+  function playDeath(){ tone(160,0.55,'sawtooth',0.18,36); }
+  function updateDrone(speed){
+    if(!droneGain || muted){ if(droneGain) droneGain.gain.value = 0; return; }
+    const f = 46 + Math.min(speed/1400, 1)*70;
+    droneOsc.frequency.setTargetAtTime(f, audioCtx.currentTime, 0.2);
+    droneGain.gain.setTargetAtTime(0.035, audioCtx.currentTime, 0.4);
+  }
+  function stopDrone(){ if(droneGain) droneGain.gain.setTargetAtTime(0, audioCtx.currentTime, 0.3); }
+
+  // ---------- persistence (best-effort: private browsing / disabled storage can throw) ----------
+  function loadBest(){
+    try{ return parseInt(localStorage.getItem('abyssDriftBest')||'0', 10); }
+    catch(e){ return 0; }
+  }
+  function saveBest(v){
+    try{ localStorage.setItem('abyssDriftBest', String(v)); }
+    catch(e){ /* storage unavailable — best just won't persist across sessions */ }
+  }
+
+  // ---------- state ----------
+  let best = loadBest();
+  let state = null;
+
+  function freshState(){
+    return {
+      status: 'title',
+      ball: { y: 0, vy: 0 },
+      rotation: 0,
+      rotationVel: 0,
+      rings: [],
+      nextRingDepth: RING_SPACING,
+      score: 0,
+      orbStreak: 0,
+      particles: [],
+      shakeMag: 0,
+      flashColor: null,
+      flashAlpha: 0,
+      keyLeft: false,
+      keyRight: false,
+      dragging: false,
+      lastPointerX: 0,
+    };
+  }
+
+  function generateRing(depth){
+    // segCount deliberately does NOT grow with depth anymore — a growing
+    // segment count was making slots narrower (and the ring visually busier)
+    // the deeper you got, which is what made things "get weirder" over time
+    const segCount = 6;
+    const difficulty = Math.min(depth/4200, 1);
+    const hazardChance = 0.03 + difficulty*0.12;
+    const platformChance = 0.42 - difficulty*0.10;
+    const segs = [];
+    for(let i=0;i<segCount;i++){
+      const r = Math.random();
+      let type;
+      if(r < hazardChance) type = 'hazard';
+      else if(r < hazardChance+platformChance) type = 'platform';
+      else type = 'gap';
+      segs.push({ type, hasOrb: type==='gap' && Math.random() < 0.7, orbCollected:false });
+    }
+    // guarantee at least 2 real openings per ring — a ring that's almost
+    // entirely wall (possible by chance with only 1 guaranteed gap) reads as
+    // unfair, especially early in a run
+    const MIN_GAPS = 2;
+    let gapCount = segs.filter(s => s.type === 'gap').length;
+    while(gapCount < MIN_GAPS){
+      const idx = Math.floor(Math.random()*segCount);
+      if(segs[idx].type !== 'gap'){
+        segs[idx] = { type:'gap', hasOrb: Math.random()<0.7, orbCollected:false };
+        gapCount++;
+      }
+    }
+    return { depth, offset: Math.random()*Math.PI*2, segCount, segs, passedGaps: new Set() };
+  }
+
+  function ensureRings(){
+    const lookahead = state.ball.y + H + 400;
+    while(state.nextRingDepth < lookahead){
+      state.rings.push(generateRing(state.nextRingDepth));
+      state.nextRingDepth += RING_SPACING;
+    }
+    state.rings = state.rings.filter(r => r.depth > state.ball.y - 500);
+  }
+
+  const ALIGN_TOLERANCE = 0.12; // ~7 degrees of forgiveness, platform-side only (see below)
+
+  function slotIndexAtAngle(ring, angle){
+    const slotWidth = (Math.PI*2)/ring.segCount;
+    const localRef = norm(angle - ring.offset - state.rotation);
+    let i = Math.floor(localRef/slotWidth);
+    if(i<0) i=0; if(i>=ring.segCount) i=ring.segCount-1;
+    return i;
+  }
+
+  function slotIndexUnderBall(ring){
+    const centerIdx = slotIndexAtAngle(ring, REF_ANGLE);
+    // forgiveness only rescues a near-miss on a PLATFORM into the adjacent
+    // gap — hazards are never softened, so real danger stays real danger
+    if(ring.segs[centerIdx].type === 'platform'){
+      const leftIdx = slotIndexAtAngle(ring, REF_ANGLE - ALIGN_TOLERANCE);
+      if(ring.segs[leftIdx].type === 'gap') return leftIdx;
+      const rightIdx = slotIndexAtAngle(ring, REF_ANGLE + ALIGN_TOLERANCE);
+      if(ring.segs[rightIdx].type === 'gap') return rightIdx;
+    }
+    return centerIdx;
+  }
+
+  function spawnBurst(x,y,color,count){
+    if(reducedMotion) count = Math.ceil(count/3);
+    for(let i=0;i<count;i++){
+      const a = Math.random()*Math.PI*2;
+      const sp = 60+Math.random()*140;
+      state.particles.push({
+        x, y, vx:Math.cos(a)*sp, vy:Math.sin(a)*sp,
+        life:1, decay: 1.4+Math.random()*1.2, color, r: 1.5+Math.random()*2.2
+      });
+    }
+  }
+
+  function depthMeters(){ return Math.floor(state.ball.y/40); }
+  function totalScore(){ return state.score + depthMeters(); }
+  // combo starts at x1 and climbs +0.1 per orb eaten; computed from an integer
+  // streak count (not accumulated by repeated += 0.1) so it never drifts off
+  // clean tenths from floating-point error
+  function comboMult(){ return 1 + state.orbStreak*0.1; }
+
+  // orb pickup is checked by actual on-screen distance to the ball, entirely
+  // independent of which ring-segment index is "active" — so it can never
+  // disagree with what the player visually sees touch the ball
+  function collectNearbyOrbs(){
+    const cameraY = state.ball.y - BALL_SCREEN_Y + RING_RADIUS*RING_SQUASH;
+    for(const ring of state.rings){
+      const screenY = ring.depth - cameraY;
+      if(Math.abs(screenY - BALL_SCREEN_Y) > RING_RADIUS + ORB_PICKUP_RADIUS) continue;
+      const slotWidth = (Math.PI*2)/ring.segCount;
+      for(let i=0;i<ring.segCount;i++){
+        const seg = ring.segs[i];
+        if(seg.type !== 'gap' || !seg.hasOrb || seg.orbCollected) continue;
+        const mid = i*slotWidth + slotWidth/2 + ring.offset + state.rotation;
+        const ox = CX + Math.cos(mid)*RING_RADIUS;
+        const oy = screenY + Math.sin(mid)*RING_RADIUS*RING_SQUASH;
+        const dx = ox - CX, dy = oy - BALL_SCREEN_Y;
+        if(dx*dx + dy*dy < ORB_PICKUP_RADIUS*ORB_PICKUP_RADIUS){
+          seg.orbCollected = true;
+          state.score += Math.round(25*comboMult());
+          state.orbStreak++;
+          playOrb();
+          spawnBurst(ox, oy, 'violet', 14);
+        }
+      }
+    }
+  }
+
+  function triggerGameOver(){
+    state.status = 'gameover';
+    state.shakeMag = reducedMotion ? 0 : 22;
+    state.flashColor = 'rgba(255,107,91,'; state.flashAlpha = 0.55;
+    spawnBurst(CX, BALL_SCREEN_Y, 'ember', 34);
+    playDeath();
+    stopDrone();
+    const depthM = depthMeters();
+    const finalScore = totalScore();
+    if(finalScore > best){ best = finalScore; saveBest(best); }
+    document.getElementById('finalDepth').textContent = depthM+'m';
+    document.getElementById('finalScore').textContent = finalScore;
+    document.getElementById('finalBest').textContent = best;
+    document.getElementById('gameOverScreen').classList.remove('hidden');
+    document.getElementById('hud').style.display = 'none';
+    el.readout.style.display = 'none';
+  }
+
+  function update(dt){
+    if(state.shakeMag>0) state.shakeMag = Math.max(0, state.shakeMag - dt*40);
+    if(state.flashAlpha>0) state.flashAlpha = Math.max(0, state.flashAlpha - dt*1.8);
+
+    if(state.status !== 'playing') return;
+
+    if(state.keyLeft) state.rotationVel -= ROT_ACCEL*dt;
+    if(state.keyRight) state.rotationVel += ROT_ACCEL*dt;
+    if(!state.keyLeft && !state.keyRight && !state.dragging){
+      state.rotationVel *= Math.exp(-ROT_DAMPING*dt);
+    }
+    state.rotationVel = Math.max(-ROT_MAX, Math.min(ROT_MAX, state.rotationVel));
+    if(!state.dragging){
+      state.rotation += state.rotationVel*dt;
+    }
+
+    ensureRings();
+
+    // physics is sub-stepped so a single frame can never move the ball more
+    // than ~8px before a crossing is checked. Without this, a fast ball
+    // (dt near 0.033s at MAX_VY) could jump up to ~70px in one step, so the
+    // frame actually RENDERED after a bounce/death/pass already shows the
+    // ring having overshot well past the ball — looking like nothing was
+    // touched even though the crossing legitimately happened that frame.
+    const steps = Math.max(1, Math.ceil((Math.abs(state.ball.vy) * dt) / MAX_STEP_PX));
+    const subDt = dt / steps;
+    outer:
+    for(let s=0; s<steps; s++){
+      const prevY = state.ball.y;
+      state.ball.vy += GRAVITY*subDt;
+      if(state.ball.vy > MAX_VY) state.ball.vy = MAX_VY;
+      state.ball.y += state.ball.vy*subDt;
+
+      for(const ring of state.rings){
+        if(prevY < ring.depth && state.ball.y >= ring.depth){
+          const idx = slotIndexUnderBall(ring);
+          const seg = ring.segs[idx];
+          if(seg.type === 'hazard'){
+            triggerGameOver();
+            break outer;
+          } else if(seg.type === 'platform'){
+            state.ball.vy = BOUNCE_VY;
+            // combo multiplier is permanent for the whole run now — bouncing
+            // off a platform no longer resets orbStreak
+            if(!reducedMotion) state.shakeMag = Math.max(state.shakeMag, 7);
+            state.flashColor = 'rgba(94,242,224,'; state.flashAlpha = 0.4;
+            playBounce();
+            spawnBurst(CX, BALL_SCREEN_Y, 'cyan', 10);
+          } else if(seg.type === 'gap'){
+            if(!ring.passedGaps.has(idx)){
+              ring.passedGaps.add(idx);
+              state.score += Math.round(10*comboMult());
+              playPass();
+              spawnBurst(CX, BALL_SCREEN_Y, 'trail', 5);
+            }
+          }
+        }
+      }
+    }
+
+    if(state.status !== 'playing') return;
+
+    // orb pickup is purely proximity-based (see collectNearbyOrbs) so it
+    // stays correct regardless of which ring-segment index "officially" fired
+    collectNearbyOrbs();
+
+    // trail particle
+    state.particles.push({
+      x: CX + (Math.random()-0.5)*4, y: BALL_SCREEN_Y + (Math.random()-0.5)*4,
+      vx:(Math.random()-0.5)*20, vy: 20+Math.random()*30,
+      life:1, decay: 2.6, color:'trail', r: 2+Math.random()*2
+    });
+    for(let i=state.particles.length-1;i>=0;i--){
+      const p = state.particles[i];
+      p.x += p.vx*dt; p.y += p.vy*dt;
+      p.life -= p.decay*dt;
+      if(p.life<=0) state.particles.splice(i,1);
+    }
+
+    updateDrone(Math.abs(state.ball.vy));
+
+    const depthNow = depthMeters();
+    if(depthNow !== last.depth){
+      last.depth = depthNow;
+      el.depth.innerHTML = depthNow + '<span style="font-size:12px;opacity:.6;">m</span>';
+    }
+    const scoreNow = totalScore();
+    if(scoreNow !== last.score){
+      last.score = scoreNow;
+      el.score.textContent = scoreNow;
+    }
+    const comboNow = comboMult().toFixed(1);
+    if(comboNow !== last.combo){
+      last.combo = comboNow;
+      el.combo.textContent = '×' + comboNow;
+    }
+
+    let nearest = null;
+    for(const r of state.rings){
+      if(r.depth > state.ball.y && (!nearest || r.depth < nearest.depth)) nearest = r;
+    }
+    if(nearest){
+      const idx = slotIndexUnderBall(nearest);
+      const seg = nearest.segs[idx];
+      let label, color;
+      if(seg.type === 'hazard'){ label = '가시 (즉사)'; color = '#ff6b5b'; }
+      else if(seg.type === 'platform'){ label = '플랫폼 (튕김)'; color = '#5ef2e0'; }
+      else { label = (seg.hasOrb && !seg.orbCollected) ? '빈 공간 (오브 있음)' : '빈 공간 (통과)'; color = '#9d7bff'; }
+      if(label !== last.readoutLabel){
+        last.readoutLabel = label;
+        el.readout.textContent = '다음 판정 → ' + label;
+        el.readout.style.color = color;
+        el.readout.style.borderColor = color;
+      }
+    }
+  }
+
+  // ---------- ambient starfield ----------
+  const starLayers = [
+    { n:26, speed:0.35, size:1.1, alpha:0.35, seeds:[] },
+    { n:18, speed:0.65, size:1.8, alpha:0.55, seeds:[] },
+  ];
+  function initStars(){
+    for(const layer of starLayers){
+      layer.seeds = [];
+      for(let i=0;i<layer.n;i++){
+        layer.seeds.push({ x: Math.random()*W, y0: Math.random()*(H+200) });
+      }
+    }
+  }
+  initStars();
+  window.addEventListener('resize', initStars);
+
+  function drawStars(cameraY){
+    for(const layer of starLayers){
+      const span = H+200;
+      ctx.fillStyle = `rgba(232,237,247,${layer.alpha})`;
+      for(const s of layer.seeds){
+        let y = ((s.y0 - cameraY*layer.speed) % span + span) % span - 100;
+        ctx.beginPath();
+        ctx.arc(s.x, y, layer.size, 0, Math.PI*2);
+        ctx.fill();
+      }
+    }
+  }
+
+  function drawPlatformWedge(a0, a1){
+    ctx.beginPath();
+    ctx.arc(0,0,RING_RADIUS, a0, a1, false);
+    ctx.arc(0,0,RING_INNER, a1, a0, true);
+    ctx.closePath();
+    const grad = ctx.createRadialGradient(0,0,RING_INNER,0,0,RING_RADIUS);
+    grad.addColorStop(0, 'rgba(94,242,224,0.12)');
+    grad.addColorStop(1, 'rgba(94,242,224,0.7)');
+    ctx.fillStyle = grad;
+    ctx.shadowColor = 'rgba(94,242,224,0.6)';
+    ctx.shadowBlur = 16;
+    ctx.fill();
+    ctx.shadowBlur = 0;
+    ctx.beginPath();
+    ctx.arc(0,0,RING_RADIUS, a0, a1);
+    ctx.strokeStyle = 'rgba(255,255,255,0.5)';
+    ctx.lineWidth = 2;
+    ctx.stroke();
+  }
+
+  function drawHazardWedge(a0, a1){
+    const spikes = Math.max(2, Math.round((a1-a0)/0.32));
+    const step = (a1-a0)/spikes;
+    // keep the inward spike tip from crossing past the wedge's own inner
+    // boundary on small/narrow viewports where RING_RADIUS is clamped down
+    const spikeInnerRad = Math.max(RING_INNER+4, RING_RADIUS-18);
+    ctx.beginPath();
+    ctx.moveTo(Math.cos(a0)*RING_INNER, Math.sin(a0)*RING_INNER);
+    for(let i=0;i<=spikes;i++){
+      const a = a0+step*i;
+      const rad = (i%2===0) ? RING_RADIUS+6 : spikeInnerRad;
+      ctx.lineTo(Math.cos(a)*rad, Math.sin(a)*rad);
+    }
+    ctx.lineTo(Math.cos(a1)*RING_INNER, Math.sin(a1)*RING_INNER);
+    ctx.arc(0,0,RING_INNER, a1, a0, true);
+    ctx.closePath();
+    ctx.fillStyle = 'rgba(255,107,91,0.85)';
+    ctx.shadowColor = 'rgba(255,107,91,0.9)';
+    ctx.shadowBlur = 16;
+    ctx.fill();
+    ctx.shadowBlur = 0;
+    ctx.strokeStyle = 'rgba(255,214,206,0.55)';
+    ctx.lineWidth = 1.5;
+    ctx.stroke();
+  }
+
+  function render(){
+    // offset so the ring's rim (at REF_ANGLE, its near/bottom edge) meets the ball's
+    // fixed screen position exactly when a collision is evaluated, not the ring's hollow center
+    const cameraY = state.ball.y - BALL_SCREEN_Y + RING_RADIUS*RING_SQUASH;
+    const depthT = Math.min(state.ball.y/6000, 1);
+
+    let shakeX=0, shakeY=0;
+    if(state.shakeMag>0){
+      shakeX = (Math.random()-0.5)*state.shakeMag;
+      shakeY = (Math.random()-0.5)*state.shakeMag;
+    }
+
+    ctx.save();
+    ctx.translate(shakeX, shakeY);
+
+    const bgTop = lerpColor('#0b1020','#05060a', depthT*0.7);
+    const bgBottom = lerpColor('#161d33','#08050f', depthT);
+    const grad = ctx.createLinearGradient(0,0,0,H);
+    grad.addColorStop(0, bgTop);
+    grad.addColorStop(1, bgBottom);
+    ctx.fillStyle = grad;
+    ctx.fillRect(-20,-20,W+40,H+40);
+
+    drawStars(cameraY);
+
+    // collision guideline
+    ctx.strokeStyle = 'rgba(94,242,224,0.14)';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(0, BALL_SCREEN_Y);
+    ctx.lineTo(W, BALL_SCREEN_Y);
+    ctx.stroke();
+
+    // ball — drawn BEFORE the rings so that whatever segment is actually at the
+    // ball's fixed position (the thing being judged) visually covers the ball
+    // when solid, instead of the ball's own glow hiding what's really there
+    if(state.status === 'playing' || state.status==='gameover'){
+      const stretch = Math.min(1.6, 1 + Math.max(0,state.ball.vy)/2600);
+      ctx.save();
+      ctx.translate(CX, BALL_SCREEN_Y);
+      ctx.scale(1/stretch, stretch);
+      const rg = ctx.createRadialGradient(0,0,0,0,0,BALL_RADIUS*2.4);
+      rg.addColorStop(0,'rgba(255,255,255,0.95)');
+      rg.addColorStop(0.4,'rgba(94,242,224,0.9)');
+      rg.addColorStop(1,'rgba(94,242,224,0)');
+      ctx.beginPath();
+      ctx.arc(0,0,BALL_RADIUS*2.4,0,Math.PI*2);
+      ctx.fillStyle = rg;
+      ctx.fill();
+      ctx.beginPath();
+      ctx.arc(0,0,BALL_RADIUS,0,Math.PI*2);
+      ctx.fillStyle = '#eafffb';
+      ctx.fill();
+      ctx.restore();
+    }
+
+    // rings
+    for(const ring of state.rings){
+      const screenY = ring.depth - cameraY;
+      if(screenY < -RING_RADIUS-40 || screenY > H+40) continue;
+      const slotWidth = (Math.PI*2)/ring.segCount;
+      // exactly the segment that WOULD be judged if this ring were at the
+      // collision line right now — shown live so alignment is never a guess
+      const activeIdx = slotIndexUnderBall(ring);
+      ctx.save();
+      ctx.translate(CX, screenY);
+      ctx.scale(1, RING_SQUASH);
+      for(let i=0;i<ring.segCount;i++){
+        // symmetric shrink so the small visual divider between segments never
+        // biases the collision boundary toward one neighbor over the other
+        const rawStart = i*slotWidth + ring.offset + state.rotation;
+        const rawEnd = rawStart + slotWidth;
+        const a0 = rawStart + SEG_PAD/2;
+        const a1 = rawEnd - SEG_PAD/2;
+        const seg = ring.segs[i];
+        if(seg.type === 'platform'){
+          drawPlatformWedge(a0, a1);
+        } else if(seg.type === 'hazard'){
+          drawHazardWedge(a0, a1);
+        } else if(seg.type === 'gap'){
+          // intentionally nothing drawn here — this IS the empty space you fall through
+          if(seg.hasOrb && !seg.orbCollected){
+            // soft wash across the FULL opening so it reads as "this whole arc is
+            // safe", not just the single pickup point at its center
+            ctx.beginPath();
+            ctx.arc(0,0,RING_RADIUS-6, a0, a1);
+            ctx.strokeStyle = 'rgba(157,123,255,0.14)';
+            ctx.lineWidth = 26;
+            ctx.stroke();
+            const mid = (a0+a1)/2;
+            const ox = Math.cos(mid)*RING_RADIUS, oy = Math.sin(mid)*RING_RADIUS;
+            const pulse = 1 + Math.sin(performance.now()/220 + i)*0.18;
+            ctx.save();
+            ctx.translate(ox,oy);
+            ctx.scale(1, 1/RING_SQUASH);
+            ctx.beginPath();
+            ctx.arc(0,0, 5.5*pulse, 0, Math.PI*2);
+            ctx.fillStyle = 'rgba(157,123,255,0.9)';
+            ctx.shadowColor = 'rgba(157,123,255,0.9)';
+            ctx.shadowBlur = 18;
+            ctx.fill();
+            ctx.shadowBlur = 0;
+            ctx.restore();
+          }
+        }
+        if(i === activeIdx){
+          // bright gold, well outside the wedge and thicker than any other
+          // stroke in the scene — a platform's own white border must never
+          // be able to hide this, since it's the one honest "what happens
+          // right now" indicator
+          const pulse = 0.6 + Math.sin(performance.now()/140)*0.4;
+          ctx.beginPath();
+          ctx.arc(0,0, RING_RADIUS+16, a0, a1);
+          ctx.strokeStyle = `rgba(255,209,64,${0.7+0.3*pulse})`;
+          ctx.shadowColor = 'rgba(255,209,64,0.9)';
+          ctx.shadowBlur = 12;
+          ctx.lineWidth = 5;
+          ctx.stroke();
+          ctx.shadowBlur = 0;
+        }
+      }
+      ctx.restore();
+    }
+
+    // particles
+    for(const p of state.particles){
+      const alpha = Math.max(0, p.life);
+      let color;
+      if(p.color==='trail') color = `rgba(94,242,224,${alpha*0.5})`;
+      else if(p.color==='cyan') color = `rgba(94,242,224,${alpha})`;
+      else if(p.color==='violet') color = `rgba(157,123,255,${alpha})`;
+      else color = `rgba(255,107,91,${alpha})`;
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, p.r, 0, Math.PI*2);
+      ctx.fillStyle = color;
+      ctx.fill();
+    }
+
+    if(state.flashAlpha > 0 && state.flashColor){
+      ctx.fillStyle = state.flashColor + (state.flashAlpha) + ')';
+      ctx.fillRect(-20,-20,W+40,H+40);
+    }
+
+    ctx.restore();
+  }
+
+  let lastTime = performance.now();
+  function loop(t){
+    let dt = (t - lastTime)/1000;
+    lastTime = t;
+    if(dt>0.033) dt=0.033;
+    update(dt);
+    render();
+    requestAnimationFrame(loop);
+  }
+
+  // ---------- input ----------
+  window.addEventListener('keydown', (e)=>{
+    if(!state) return;
+    if(e.code==='ArrowLeft'||e.code==='KeyA') state.keyLeft = true;
+    if(e.code==='ArrowRight'||e.code==='KeyD') state.keyRight = true;
+    if((e.code==='Enter'||e.code==='Space')){
+      if(state.status==='title') startGame();
+      else if(state.status==='gameover') startGame();
+    }
+  });
+  window.addEventListener('keyup', (e)=>{
+    if(!state) return;
+    if(e.code==='ArrowLeft'||e.code==='KeyA') state.keyLeft = false;
+    if(e.code==='ArrowRight'||e.code==='KeyD') state.keyRight = false;
+  });
+  canvas.addEventListener('pointerdown', (e)=>{
+    if(!state || state.status!=='playing') return;
+    state.dragging = true;
+    state.lastPointerX = e.clientX;
+    canvas.setPointerCapture(e.pointerId);
+  });
+  canvas.addEventListener('pointermove', (e)=>{
+    if(!state || !state.dragging) return;
+    const dx = e.clientX - state.lastPointerX;
+    state.lastPointerX = e.clientX;
+    state.rotation += dx*DRAG_SENS;
+    state.rotationVel = Math.max(-ROT_MAX, Math.min(ROT_MAX, dx*DRAG_SENS*14));
+  });
+  canvas.addEventListener('pointerup', ()=>{ if(state) state.dragging=false; });
+  canvas.addEventListener('pointercancel', ()=>{ if(state) state.dragging=false; });
+
+  document.getElementById('muteBtn').addEventListener('click', ()=>{
+    muted = !muted;
+    document.getElementById('muteBtn').textContent = muted ? '✕' : '♪';
+    if(muted && droneGain) droneGain.gain.value = 0;
+  });
+
+  function startGame(){
+    ensureAudio();
+    state = freshState();
+    state.status = 'playing';
+    ensureRings();
+    last.depth = null; last.score = null; last.combo = null; last.readoutLabel = null;
+    document.getElementById('titleScreen').classList.add('hidden');
+    document.getElementById('gameOverScreen').classList.add('hidden');
+    document.getElementById('hud').style.display = 'flex';
+    el.readout.style.display = 'block';
+  }
+
+  document.getElementById('startBtn').addEventListener('click', startGame);
+  document.getElementById('retryBtn').addEventListener('click', startGame);
+  document.getElementById('titleLink').addEventListener('click', ()=>{
+    document.getElementById('gameOverScreen').classList.add('hidden');
+    document.getElementById('titleScreen').classList.remove('hidden');
+    el.readout.style.display = 'none';
+    state = freshState();
+  });
+
+  if(best>0){
+    document.getElementById('titleBest').style.display='inline-flex';
+    document.getElementById('titleBestVal').textContent = best;
+  }
+
+  state = freshState();
+  requestAnimationFrame(loop);
+})();
+</script>
