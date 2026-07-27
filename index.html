@@ -925,10 +925,10 @@
             ctx.translate(ox,oy);
             ctx.scale(1, 1/RING_SQUASH);
             ctx.beginPath();
-            ctx.arc(0,0, 5.5*pulse, 0, Math.PI*2);
+            ctx.arc(0,0, 9*pulse, 0, Math.PI*2);
             ctx.fillStyle = 'rgba(157,123,255,0.9)';
             ctx.shadowColor = 'rgba(157,123,255,0.9)';
-            ctx.shadowBlur = 18;
+            ctx.shadowBlur = 24;
             ctx.fill();
             ctx.shadowBlur = 0;
             ctx.restore();
