@@ -89,8 +89,6 @@
     -webkit-backdrop-filter:blur(16px);
     box-shadow:0 30px 80px rgba(0,0,0,0.5), 0 0 60px rgba(94,242,224,0.05) inset;
   }
-  .panel > *{ position:relative; }
-
   .glow-blob{
     position:absolute; border-radius:50%; filter:blur(50px); pointer-events:none;
   }
@@ -105,7 +103,7 @@
     position:relative;
     width:min(92vw, clamp(370px, 30vw, 560px));
     display:grid;
-    grid-template-areas:"badge" "title" "desc" "controls" "legend" "cta";
+    grid-template-areas:"badge" "title" "desc" "controls" "skin" "legend" "cta";
     row-gap:22px;
     background:radial-gradient(circle at 50% -10%, rgba(60,58,110,0.55) 0%, var(--ink-mist-soft) 55%, rgba(9,11,20,0.7) 100%);
     border:1px solid rgba(94,242,224,0.22);
@@ -167,6 +165,24 @@
     flex-basis:100%; /* forces its own line on mobile; desktop clears this to flow inline */
     font-size:clamp(12px,1vw,13.5px); color:var(--text-muted);
   }
+
+  .skin-picker{ display:flex; flex-direction:column; align-items:center; gap:10px; }
+  .skin-label{
+    font-family:var(--font-mono); font-size:11px; letter-spacing:.14em;
+    color:var(--text-muted); text-transform:uppercase;
+  }
+  .skin-row{ display:flex; justify-content:center; gap:12px; }
+  .skin-swatch{
+    width:38px; height:38px; border-radius:50%; padding:0; cursor:pointer;
+    border:2px solid transparent; background:transparent;
+    box-shadow:0 0 0 2px rgba(255,255,255,0.08) inset;
+    transition:transform .15s ease, box-shadow .15s ease;
+  }
+  .skin-swatch:hover{ transform:translateY(-2px); }
+  .skin-swatch.selected{
+    border-color:#fff; box-shadow:0 0 0 3px rgba(255,255,255,0.15), 0 0 16px currentColor;
+  }
+  .skin-swatch:focus-visible{ outline:2px solid var(--glow-violet); outline-offset:3px; }
   .legend{
     display:flex; flex-direction:column; gap:13px; align-items:stretch;
     margin:0; padding:clamp(16px,1.6vw,20px) clamp(18px,1.8vw,22px);
@@ -231,6 +247,7 @@
         "title    legend"
         "desc     legend"
         "controls legend"
+        "skin     legend"
         "cta      legend";
       column-gap:80px; row-gap:20px;
       background:none; border:none; padding:0; box-shadow:none;
@@ -248,6 +265,8 @@
     .desc{ font-size:16.5px; max-width:460px; }
     .key-row{ justify-content:flex-start; }
     .controls-caption{ flex-basis:auto; width:auto; margin-left:4px; }
+    .skin-picker{ align-items:flex-start; }
+    .skin-row{ justify-content:flex-start; }
     .cta-group{ align-items:flex-start; }
     .cta{ width:280px; }
     .legend-col{
@@ -322,6 +341,11 @@
         <span class="key">A</span>
         <span class="key">D</span>
         <span class="controls-caption">로 회전 · 드래그로도 회전 가능</span>
+      </div>
+
+      <div class="skin-picker" style="grid-area:skin;">
+        <p class="skin-label">공 색상 선택</p>
+        <div class="skin-row" id="skinRow"></div>
       </div>
 
       <div class="legend-col" style="grid-area:legend;">
@@ -409,7 +433,7 @@
   // ---------- constants ----------
   const RING_SPACING = 300;   // world-units of fall between consecutive rings
   const RING_SQUASH = 0.34;   // vertical flatten factor for the ring ellipse
-  const BALL_RADIUS = 10;
+  const BALL_RADIUS = 14;
   const GRAVITY = 700;        // px/s^2 while falling
   const BOUNCE_VY = -520;     // upward velocity applied on a platform bounce
   const MAX_VY = 2200;        // terminal fall speed cap
@@ -420,11 +444,22 @@
   // part of the ring that visually reaches the ball first, so it reads as
   // "the front" of the ring, not "the back"
   const REF_ANGLE = Math.PI / 2;
-  const ROT_ACCEL = 11;
+  const ROT_ACCEL = 8.5;
   const ROT_MAX = 3.8;
-  const ROT_DAMPING = 7.5;
+  const ROT_DAMPING = 5;
   const DRAG_SENS = 0.006;
   const SEG_PAD = 0.02;
+
+  // four elemental ball skins the player can pick on the title screen —
+  // glossy sphere look, colors as "r,g,b" triplets so they drop straight
+  // into rgba(). Orbs always use the fixed violet look below regardless.
+  const SKINS = [
+    { name:'aqua',   glow:'94,242,208',  hi:'255,255,255', light:'190,255,232', mid:'75,227,194',  dark:'31,143,120' },
+    { name:'arcane', glow:'193,123,255', hi:'255,255,255', light:'233,201,255', mid:'181,101,240', dark:'107,47,163'  },
+    { name:'fire',   glow:'255,138,61',  hi:'255,224,138', light:'255,224,138', mid:'255,138,61',  dark:'178,58,18'  },
+    { name:'poison', glow:'126,209,63',  hi:'255,255,255', light:'212,255,176', mid:'126,209,63',  dark:'63,138,26'  },
+  ];
+  const ORB_KIND = { glow:'157,123,255', hi:'255,255,255', light:'233,201,255', mid:'181,101,240', dark:'107,47,163' };
 
   function norm(a){ a = a % (Math.PI*2); if(a<0) a += Math.PI*2; return a; }
   function lerp(a,b,t){ return a+(b-a)*t; }
@@ -485,9 +520,20 @@
     try{ localStorage.setItem('abyssDriftBest', String(v)); }
     catch(e){ /* storage unavailable — best just won't persist across sessions */ }
   }
+  function loadSkinIndex(){
+    try{
+      const i = parseInt(localStorage.getItem('abyssDriftSkin')||'0', 10);
+      return (i>=0 && i<SKINS.length) ? i : 0;
+    }catch(e){ return 0; }
+  }
+  function saveSkinIndex(i){
+    try{ localStorage.setItem('abyssDriftSkin', String(i)); }
+    catch(e){ /* storage unavailable — choice just won't persist across sessions */ }
+  }
 
   // ---------- state ----------
   let best = loadBest();
+  let skinIndex = loadSkinIndex();
   let state = null;
 
   function freshState(){
@@ -511,14 +557,27 @@
     };
   }
 
+  function makeSeg(type){
+    const hasOrb = type === 'gap' && Math.random() < 0.7;
+    return { type, hasOrb, orbKind: hasOrb ? ORB_KIND : null, orbCollected:false };
+  }
+
+  const GRACE_DEPTH = 900; // first ~3 rings are pure open space — no platforms, no hazards
+
   function generateRing(depth){
     // segCount deliberately does NOT grow with depth anymore — a growing
     // segment count was making slots narrower (and the ring visually busier)
     // the deeper you got, which is what made things "get weirder" over time
     const segCount = 6;
-    const difficulty = Math.min(depth/4200, 1);
-    const hazardChance = 0.03 + difficulty*0.12;
-    const platformChance = 0.42 - difficulty*0.10;
+    let hazardChance, platformChance;
+    if(depth < GRACE_DEPTH){
+      hazardChance = 0;
+      platformChance = 0;
+    } else {
+      const difficulty = Math.min((depth-GRACE_DEPTH)/4200, 1);
+      hazardChance = 0.03 + difficulty*0.12;
+      platformChance = 0.42 - difficulty*0.10;
+    }
     const segs = [];
     for(let i=0;i<segCount;i++){
       const r = Math.random();
@@ -526,7 +585,7 @@
       if(r < hazardChance) type = 'hazard';
       else if(r < hazardChance+platformChance) type = 'platform';
       else type = 'gap';
-      segs.push({ type, hasOrb: type==='gap' && Math.random() < 0.7, orbCollected:false });
+      segs.push(makeSeg(type));
     }
     // guarantee at least 2 real openings per ring — a ring that's almost
     // entirely wall (possible by chance with only 1 guaranteed gap) reads as
@@ -536,7 +595,7 @@
     while(gapCount < MIN_GAPS){
       const idx = Math.floor(Math.random()*segCount);
       if(segs[idx].type !== 'gap'){
-        segs[idx] = { type:'gap', hasOrb: Math.random()<0.7, orbCollected:false };
+        segs[idx] = makeSeg('gap');
         gapCount++;
       }
     }
@@ -575,14 +634,14 @@
     return centerIdx;
   }
 
-  function spawnBurst(x,y,color,count){
+  function spawnBurst(x,y,rgb,count){
     if(reducedMotion) count = Math.ceil(count/3);
     for(let i=0;i<count;i++){
       const a = Math.random()*Math.PI*2;
       const sp = 60+Math.random()*140;
       state.particles.push({
         x, y, vx:Math.cos(a)*sp, vy:Math.sin(a)*sp,
-        life:1, decay: 1.4+Math.random()*1.2, color, r: 1.5+Math.random()*2.2
+        life:1, decay: 1.4+Math.random()*1.2, color:rgb, r: 1.5+Math.random()*2.2
       });
     }
   }
@@ -615,7 +674,7 @@
           state.score += Math.round(25*comboMult());
           state.orbStreak++;
           playOrb();
-          spawnBurst(ox, oy, 'violet', 14);
+          spawnBurst(ox, oy, seg.orbKind.glow, 14);
         }
       }
     }
@@ -625,7 +684,7 @@
     state.status = 'gameover';
     state.shakeMag = reducedMotion ? 0 : 22;
     state.flashColor = 'rgba(255,107,91,'; state.flashAlpha = 0.55;
-    spawnBurst(CX, BALL_SCREEN_Y, 'ember', 34);
+    spawnBurst(CX, BALL_SCREEN_Y, '255,107,91', 34);
     playDeath();
     stopDrone();
     const depthM = depthMeters();
@@ -686,13 +745,13 @@
             if(!reducedMotion) state.shakeMag = Math.max(state.shakeMag, 7);
             state.flashColor = 'rgba(94,242,224,'; state.flashAlpha = 0.4;
             playBounce();
-            spawnBurst(CX, BALL_SCREEN_Y, 'cyan', 10);
+            spawnBurst(CX, BALL_SCREEN_Y, '94,242,224', 10);
           } else if(seg.type === 'gap'){
             if(!ring.passedGaps.has(idx)){
               ring.passedGaps.add(idx);
               state.score += Math.round(10*comboMult());
               playPass();
-              spawnBurst(CX, BALL_SCREEN_Y, 'trail', 5);
+              spawnBurst(CX, BALL_SCREEN_Y, '94,242,224', 5);
             }
           }
         }
@@ -705,12 +764,6 @@
     // stays correct regardless of which ring-segment index "officially" fired
     collectNearbyOrbs();
 
-    // trail particle
-    state.particles.push({
-      x: CX + (Math.random()-0.5)*4, y: BALL_SCREEN_Y + (Math.random()-0.5)*4,
-      vx:(Math.random()-0.5)*20, vy: 20+Math.random()*30,
-      life:1, decay: 2.6, color:'trail', r: 2+Math.random()*2
-    });
     for(let i=state.particles.length-1;i>=0;i--){
       const p = state.particles[i];
       p.x += p.vx*dt; p.y += p.vy*dt;
@@ -831,6 +884,27 @@
     ctx.stroke();
   }
 
+  // glossy elemental sphere: soft ambient halo, a radial-gradient body with
+  // an off-center highlight to fake a light source, and a small specular
+  // blob — drawn at the current canvas origin, already translated in place
+  function drawOrb(kind, pulse){
+    const R = 10*pulse;
+    const grad = ctx.createRadialGradient(-R*0.3,-R*0.35,R*0.1, 0,0,R);
+    grad.addColorStop(0, `rgba(${kind.hi},0.95)`);
+    grad.addColorStop(0.45, `rgba(${kind.light},1)`);
+    grad.addColorStop(0.8, `rgba(${kind.mid},1)`);
+    grad.addColorStop(1, `rgba(${kind.dark},1)`);
+    ctx.beginPath();
+    ctx.arc(0,0,R,0,Math.PI*2);
+    ctx.fillStyle = grad;
+    ctx.fill();
+
+    ctx.beginPath();
+    ctx.ellipse(-R*0.32,-R*0.38, R*0.32, R*0.18, -0.4, 0, Math.PI*2);
+    ctx.fillStyle = 'rgba(255,255,255,0.55)';
+    ctx.fill();
+  }
+
   function render(){
     // offset so the ring's rim (at REF_ANGLE, its near/bottom edge) meets the ball's
     // fixed screen position exactly when a collision is evaluated, not the ring's hollow center
@@ -868,21 +942,22 @@
     // ball's fixed position (the thing being judged) visually covers the ball
     // when solid, instead of the ball's own glow hiding what's really there
     if(state.status === 'playing' || state.status==='gameover'){
+      const skin = SKINS[skinIndex];
       const stretch = Math.min(1.6, 1 + Math.max(0,state.ball.vy)/2600);
       ctx.save();
       ctx.translate(CX, BALL_SCREEN_Y);
       ctx.scale(1/stretch, stretch);
       const rg = ctx.createRadialGradient(0,0,0,0,0,BALL_RADIUS*2.4);
-      rg.addColorStop(0,'rgba(255,255,255,0.95)');
-      rg.addColorStop(0.4,'rgba(94,242,224,0.9)');
-      rg.addColorStop(1,'rgba(94,242,224,0)');
+      rg.addColorStop(0,`rgba(${skin.hi},0.95)`);
+      rg.addColorStop(0.4,`rgba(${skin.glow},0.9)`);
+      rg.addColorStop(1,`rgba(${skin.glow},0)`);
       ctx.beginPath();
       ctx.arc(0,0,BALL_RADIUS*2.4,0,Math.PI*2);
       ctx.fillStyle = rg;
       ctx.fill();
       ctx.beginPath();
       ctx.arc(0,0,BALL_RADIUS,0,Math.PI*2);
-      ctx.fillStyle = '#eafffb';
+      ctx.fillStyle = `rgb(${skin.light})`;
       ctx.fill();
       ctx.restore();
     }
@@ -917,7 +992,7 @@
             // safe", not just the single pickup point at its center
             ctx.beginPath();
             ctx.arc(0,0,RING_RADIUS-6, a0, a1);
-            ctx.strokeStyle = 'rgba(157,123,255,0.14)';
+            ctx.strokeStyle = `rgba(${seg.orbKind.glow},0.14)`;
             ctx.lineWidth = 26;
             ctx.stroke();
             const mid = (a0+a1)/2;
@@ -926,13 +1001,7 @@
             ctx.save();
             ctx.translate(ox,oy);
             ctx.scale(1, 1/RING_SQUASH);
-            ctx.beginPath();
-            ctx.arc(0,0, 9*pulse, 0, Math.PI*2);
-            ctx.fillStyle = 'rgba(157,123,255,0.9)';
-            ctx.shadowColor = 'rgba(157,123,255,0.9)';
-            ctx.shadowBlur = 24;
-            ctx.fill();
-            ctx.shadowBlur = 0;
+            drawOrb(seg.orbKind, pulse);
             ctx.restore();
           }
         }
@@ -955,14 +1024,10 @@
       ctx.restore();
     }
 
-    // particles
+    // particles — p.color is an "r,g,b" triplet from spawnBurst
     for(const p of state.particles){
       const alpha = Math.max(0, p.life);
-      let color;
-      if(p.color==='trail') color = `rgba(94,242,224,${alpha*0.5})`;
-      else if(p.color==='cyan') color = `rgba(94,242,224,${alpha})`;
-      else if(p.color==='violet') color = `rgba(157,123,255,${alpha})`;
-      else color = `rgba(255,107,91,${alpha})`;
+      const color = `rgba(${p.color},${alpha})`;
       ctx.beginPath();
       ctx.arc(p.x, p.y, p.r, 0, Math.PI*2);
       ctx.fillStyle = color;
@@ -1049,6 +1114,26 @@
     document.getElementById('titleBest').style.display='inline-flex';
     document.getElementById('titleBestVal').textContent = best;
   }
+
+  // ---------- ball skin picker ----------
+  const SKIN_LABELS = { aqua:'아쿠아', arcane:'아케인', fire:'파이어', poison:'포이즌' };
+  const skinRow = document.getElementById('skinRow');
+  const skinButtons = SKINS.map((skin, i) => {
+    const btn = document.createElement('button');
+    btn.className = 'skin-swatch' + (i === skinIndex ? ' selected' : '');
+    btn.type = 'button';
+    btn.title = SKIN_LABELS[skin.name] || skin.name;
+    btn.setAttribute('aria-label', (SKIN_LABELS[skin.name] || skin.name) + ' 공 선택');
+    btn.style.background = `radial-gradient(circle at 35% 30%, rgb(${skin.hi}), rgb(${skin.light}) 45%, rgb(${skin.mid}) 80%, rgb(${skin.dark}))`;
+    btn.style.color = `rgb(${skin.glow})`; // feeds the .selected ring's currentColor glow
+    btn.addEventListener('click', () => {
+      skinIndex = i;
+      saveSkinIndex(i);
+      skinButtons.forEach((b, j) => b.classList.toggle('selected', j === i));
+    });
+    skinRow.appendChild(btn);
+    return btn;
+  });
 
   state = freshState();
   requestAnimationFrame(loop);
